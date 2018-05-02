@@ -5,10 +5,10 @@ services:
         ports:
             - "3306:3306"
         environment:
-            MYSQL_ROOT_PASSWORD: root
-            MYSQL_DATABASE: symfony
-            MYSQL_USER: symfony
-            MYSQL_PASSWORD: symfony
+            MYSQL_ROOT_PASSWORD: 123456z
+            MYSQL_DATABASE: library
+            MYSQL_USER: dev
+            MYSQL_PASSWORD: 123456z
     php:
         build: ./php-fpm
         ports:
