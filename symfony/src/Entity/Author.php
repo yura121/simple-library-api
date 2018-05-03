@@ -13,13 +13,13 @@ use Doctrine\ORM\Mapping as ORM;
 class Author extends AbstractEntity
 {
     /**
-     * @ORM\Column(type="string", length=200, nullable=false)
+     * @ORM\Column(name="full_name", type="string", length=200, nullable=false)
      */
-    protected $name;
+    protected $fullName;
 
-    public function setName(string $name): self
+    public function setFullName(string $fullName): self
     {
-        $this->name = $name;
+        $this->fullName = $fullName;
 
         return $this;
     }

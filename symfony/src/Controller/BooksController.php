@@ -22,28 +22,40 @@ class BooksController extends Controller
      * @FOSRest\Get("/books/authors/top/{count}")
      * @param int $count
      * @return View
-     * @throws \Doctrine\DBAL\DBALException
      */
     public function getTopAuthorsAction(int $count)
     {
-        $sql = "
-SELECT a.name AS author_full_name, COUNT(ap.id) AS books_count
-FROM
-    author a
-    INNER JOIN author__product ap ON ap.author_id = a.id AND ap.product_type = :product_type
-GROUP BY a.id
-ORDER BY books_count DESC, author_full_name ASC
-LIMIT :count
-";
         /** @var EntityManager $em */
         $em = $this->getDoctrine()->getManager();
         $connection = $em->getConnection();
-        $statement = $connection->prepare($sql);
-        $statement->bindValue('product_type', AbstractEntity::PRODUCT_TYPE__BOOK, PDO::PARAM_INT);
-        $statement->bindValue('count', $count, PDO::PARAM_INT);
-        $statement->execute();
-        $results = $statement->fetchAll();
 
-        return View::create($results, Response::HTTP_OK, []);
+        $sql = "
+SELECT
+    a.full_name AS author_full_name,
+    COUNT(ap.id) AS books_count
+FROM
+    author a
+    INNER JOIN author_product ap ON ap.author_id = a.id AND ap.product_type = :product_type
+GROUP BY
+    a.id
+ORDER BY
+    books_count DESC,
+    author_full_name ASC
+LIMIT
+    :count
+";
+        try {
+            $statement = $connection->prepare($sql);
+            $statement->bindValue('product_type', AbstractEntity::PRODUCT_TYPE__BOOK, PDO::PARAM_INT);
+            $statement->bindValue('count', $count, PDO::PARAM_INT);
+            $statement->execute();
+            $response = $statement->fetchAll();
+            $responseCode = Response::HTTP_OK;
+        } catch (\Exception $e) {
+            $response = 'Unknown error';
+            $responseCode = Response::HTTP_INTERNAL_SERVER_ERROR;
+        }
+
+        return View::create($response, $responseCode);
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\AbstractEntity;
+use App\Validator;
 use Doctrine\ORM\EntityManager;
 use PDO;
 use Symfony\Component\HttpFoundation\Request;
@@ -22,11 +23,21 @@ class AuthorController extends Controller
      * @FOSRest\Get("/author/books")
      * @param Request $request
      * @return View
-     * @throws \Doctrine\DBAL\DBALException
      */
     public function getAuthorBooksAction(Request $request)
     {
-        $authorFullName = $request->get('author_full_name');
+        $validator = new Validator\SearchParams([
+            Validator\SearchParams::PARAM__AUTHOR_FULL_NAME => $request->get(Validator\SearchParams::PARAM__AUTHOR_FULL_NAME),
+        ]);
+        if (!$validator->isValid()) {
+            return View::create('Invalid data', Response::HTTP_BAD_REQUEST);
+        }
+
+        $authorFullName = $validator->getParam(Validator\SearchParams::PARAM__AUTHOR_FULL_NAME);
+
+        /** @var EntityManager $em */
+        $em = $this->getDoctrine()->getManager();
+        $connection = $em->getConnection();
 
         $sql = "
 SELECT
@@ -35,20 +46,25 @@ SELECT
     b.created_at AS time_added
 FROM
     book b
-    INNER JOIN author__product ap ON ap.product_id = b.id AND ap.product_type = :product_type
+    INNER JOIN author_product ap ON ap.product_id = b.id AND ap.product_type = :product_type
     INNER JOIN author a on ap.author_id = a.id
-WHERE a.name = :author_full_name
-ORDER BY b.title ASC
+WHERE
+    a.full_name_lowercase = :author_full_name
+ORDER BY
+    b.title ASC
 ";
-        /** @var EntityManager $em */
-        $em = $this->getDoctrine()->getManager();
-        $connection = $em->getConnection();
-        $statement = $connection->prepare($sql);
-        $statement->bindValue('product_type', AbstractEntity::PRODUCT_TYPE__BOOK, PDO::PARAM_INT);
-        $statement->bindValue('author_full_name', $authorFullName);
-        $statement->execute();
-        $results = $statement->fetchAll();
+        try {
+            $statement = $connection->prepare($sql);
+            $statement->bindValue('product_type', AbstractEntity::PRODUCT_TYPE__BOOK, PDO::PARAM_INT);
+            $statement->bindValue('author_full_name', strtolower($authorFullName));
+            $statement->execute();
+            $response = $statement->fetchAll();
+            $responseCode = Response::HTTP_OK;
+        } catch (\Exception $e) {
+            $response = 'Unknown error';
+            $responseCode = Response::HTTP_INTERNAL_SERVER_ERROR;
+        }
 
-        return View::create($results, Response::HTTP_OK, []);
+        return View::create($response, $responseCode);
     }
 }

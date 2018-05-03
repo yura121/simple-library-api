@@ -8,6 +8,7 @@ use App\Entity\AuthorProduct;
 use App\Entity\Book;
 use App\Entity\Isbn;
 use App\ValidationException;
+use App\Validator;
 use Doctrine\ORM\EntityManager;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -27,45 +28,56 @@ class ScanController extends Controller
      * @FOSRest\Post("/scan")
      * @param Request $request
      * @return View
-     * @throws \Doctrine\DBAL\ConnectionException
      */
     public function postScanAction(Request $request)
     {
         $post = $request->request;
         /** @var EntityManager $em */
         $em = $this->getDoctrine()->getManager();
+        AbstractEntity::setEntityManager($em);
 
-        $hasError = false;
         $em->getConnection()->beginTransaction();
         try {
-            $title = $post->get('title');
-            $year = $post->get('year');
-            $authorFullName = $post->get('author_full_name');
-            $isbnNum = $post->get('isbn');
+            $validator = new Validator\ScannedData([
+                Validator\ScannedData::PARAM__TITLE => $post->get(Validator\ScannedData::PARAM__TITLE),
+                Validator\ScannedData::PARAM__YEAR => $post->get(Validator\ScannedData::PARAM__YEAR),
+                Validator\ScannedData::PARAM__AUTHOR_FULL_NAME => $post->get(Validator\ScannedData::PARAM__AUTHOR_FULL_NAME),
+                Validator\ScannedData::PARAM__ISBN => $post->get(Validator\ScannedData::PARAM__ISBN),
+            ]);
+            if (!$validator->isValid()) {
+                throw new ValidationException('Invalid data');
+            }
+            $title = $validator->getParam(Validator\ScannedData::PARAM__TITLE);
+            $year = $validator->getParam(Validator\ScannedData::PARAM__YEAR);
+            $authorFullName = $validator->getParam(Validator\ScannedData::PARAM__AUTHOR_FULL_NAME);
+            $isbnNum = $validator->getParam(Validator\ScannedData::PARAM__ISBN);
 
-            // find or create Book
-            $book = $em->getRepository(Book::class)
-                ->findOneBy(['title' => $title, 'year' => $year]);
+            // Find or create Book
+            $book = AbstractEntity::findOneBy(Book::class, [
+                'title_lowercase' => strtolower($title),
+                'year' => $year,
+            ]);
             if (empty($book)) {
                 $book = new Book();
                 $book->setTitle($title)
                     ->setYear($year);
             }
 
-            // find or create Author
-            $author = $em->getRepository(Author::class)
-                ->findOneBy(['name' => $authorFullName]);
+            // Find or create Author
+            $author = AbstractEntity::findOneBy(Author::class, [
+                'full_name_lowercase' => strtolower($authorFullName),
+            ]);
             if (empty($author)) {
                 $author = new Author();
-                $author->setName($authorFullName);
+                $author->setFullName($authorFullName);
             }
 
-            // find Isbn
+            // Find Isbn
             /** @var Isbn $isbn */
             $isbn = $em->getRepository(Isbn::class)
                 ->findOneBy(['num' => $isbnNum]);
 
-            // check ISBN
+            // Check Isbn
             $isAnotherBookIsbn = false;
             if (!empty($isbn)) {
                 $isbnBook = $isbn->getBook();
@@ -77,7 +89,7 @@ class ScanController extends Controller
                 throw new ValidationException('ISBN is already mapped to another book');
             }
 
-            // append ISBN to Book if valid and not exists
+            // Append Isbn to Book if valid and not exists
             $isbnAdded = false;
             if (empty($isbn)) {
                 $isbn = new Isbn();
@@ -91,7 +103,7 @@ class ScanController extends Controller
             $em->persist($isbn);
             $em->flush();
 
-            // find relation between author and book
+            // Find relation between Author and Book
             $authorProduct = $em->getRepository(AuthorProduct::class)
                 ->findOneBy([
                     'authorId' => $author->getId(),
@@ -103,6 +115,7 @@ class ScanController extends Controller
                 throw new ValidationException('Already exists');
             }
 
+            // Create relation between Author and Book
             if (empty($authorProduct)) {
                 $authorProduct = new AuthorProduct();
                 $authorProduct->setAuthorId($author->getId());
@@ -113,22 +126,28 @@ class ScanController extends Controller
             }
 
             $em->getConnection()->commit();
-            $message = "ok";
+            $response = "ok";
+            $responseCode = $this->container->getParameter('app.led.green');
+
         } catch (ValidationException $e) {
-            $em->getConnection()->rollBack();
-            $message = $e->getMessage();
-            $hasError = true;
+            try {
+                $em->getConnection()->rollBack();
+                $response = $e->getMessage();
+            } catch (\Exception $ee) {
+                $response = $ee->getMessage();
+            }
+            $responseCode = $this->container->getParameter('app.led.red');
         } catch (\Exception $e) {
-            $em->getConnection()->rollBack();
-            $message = "Unknown error";
-            $hasError = true;
+            try {
+                $em->getConnection()->rollBack();
+            } catch (\Exception $ee) {
+                // ---
+            }
+            $response = 'Unknown error';
+            $responseCode = $this->container->getParameter('app.led.red');
             //throw $e;
         }
 
-        $responseCode = $hasError
-            ? $this->container->getParameter('app.led.red')
-            : $this->container->getParameter('app.led.green');
-
-        return View::create($message, $responseCode, []);
+        return View::create($response, $responseCode);
     }
 }

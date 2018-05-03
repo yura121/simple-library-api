@@ -6,7 +6,7 @@ use App\AbstractEntity;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * @ORM\Table(name="author__product")
+ * @ORM\Table(name="author_product")
  * @ORM\Entity
  * @ORM\HasLifecycleCallbacks
  */
